@@ -37,7 +37,6 @@ function Kde-Share {
 
 	Write-Debug "Files: $Files"
 
-	$fn = {param($a) Use-KdeDevice @a}
 	$Files | ForEach-Object {
 		#Action that will run in Parallel. Reference the current object via $PSItem and bring in outside variables with $USING:varname
 

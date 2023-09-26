@@ -12,6 +12,7 @@
 	AliasesToExport       = '*'
 	Description           = "Utilities by RDS"
 	GUID                  = 'ec3a113c-1235-440d-809c-a2082007dc57'
-	NestedModules         = @('KDE')
+	NestedModules         = @('KDE','Android')
+	RequiredModules		  = @('PSKantan')
 	#ModuleList            = @('Android')
 }
