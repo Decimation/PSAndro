@@ -130,7 +130,7 @@ function Adb-Copy {
 		$v
 	)
 	$s = "am start-activity -a android.intent.action.SEND -e android.intent.extra.TEXT '$v' -t 'text/plain' com.tengu.sharetoclipboard"
-	$vv=@('shell',$s)
+	$vv = @('shell', $s)
 	return adb @vv
 
 }
@@ -145,7 +145,7 @@ function Adb-GetDevices {
 
 const P_SDCARD = 'sdcard/'
 
-function Adb-QPush {
+<# function Adb-QPush {
 	
 	param (
 		$f,
@@ -162,10 +162,10 @@ function Adb-QPush {
 		adb push $f $d
 	}
 	
-}
+} #>
 
 
-function Adb-QPull {
+<# function Adb-QPull {
 	param(
 		$r, 
 		[parameter(Mandatory = $false)] 
@@ -199,7 +199,7 @@ function Adb-QPull {
 		# $SyncTable.c++
 		# Write-Host "`r $($SyncTable.c)/$($SyncTable.l)" -NoNewline
 
-		<# Write-Progress -Activity g -PercentComplete (($i / $l) * 100.0) #>
+		# Write-Progress -Activity g -PercentComplete (($i / $l) * 100.0)
 	}
 	
 	Write-Host
@@ -209,7 +209,7 @@ function Adb-QPull {
 	#todo
 	
 	$global:SyncState = $global:SyncStateEmpty.psobject.copy()
-}
+} #>
 
 $global:SyncStateEmpty = [hashtable]::Synchronized(
 	@{
@@ -221,19 +221,89 @@ $global:SyncStateEmpty = [hashtable]::Synchronized(
 
 $global:SyncState = $global:SyncStateEmpty.psobject.copy()
 
+
+
+function Adb-GetItemsDifference {
+	[CmdletBinding()]
+	[outputtype([AdbItem[]])]
+	param (
+		[Parameter(Mandatory, Position = 0)]
+		$RemotePath,
+		[Parameter(Mandatory, Position = 1)]
+		$LocalPath
+	)
+
+	$remoteItems = Adb-GetItems $RemotePath
+	$localItems = Get-ChildItem $LocalPath
+	$localNames = $localItems | Select-Object -ExpandProperty Name
+	$diff = $remoteItems | where { $localNames -notcontains $_.Name }
+	return $diff
+}
+
+class AdbItem {
+	[bool]$IsDirectory
+	[bool]$IsFile
+	[string]$Name
+	[string]$FullName
+	[string]$Permissions
+	[string]$Links
+	[string]$Owner
+	[string]$Group
+	[string]$Size
+	[string]$Date
+	[string]$Time
+	[bool]$NameError
+}
+
+function Adb-QPull {
+	param (
+		$Items,
+		$Destination = $(Get-Location)
+	)
+	begin{
+
+	}
+	process {
+		if (-not (Test-Path $Destination)) {
+			mkdir $Destination
+		}
+		$Destination = Resolve-Path $Destination
+		$global:SyncState.l = $Items.Length
+		
+		$z = Invoke-Parallel -InputObject $Items -Parameter $Destination -ImportVariables -Quiet -ScriptBlock {
+			$src = $_.FullName
+			$dst = "$parameter\$($_.Name)"
+			adb pull $_.FullName $dst
+			<# $dst = "$parameter\$($_.Name)"
+			$dst = Resolve-Path $dst
+			$dst = $dst.Path
+			$dst = $dst.Replace('Microsoft.PowerShell.Core\FileSystem::', '') #>
+
+			$global:SyncState.Counter++
+			# Write-Host "`r$($global:SyncState.Counter)" -NoNewline
+
+			# $SyncTable.c++
+			# Write-Host "`r $($SyncTable.c)/$($SyncTable.l)" -NoNewline
+
+			# Write-Progress -Activity g -PercentComplete (($i / $l) * 100.0)
+
+			Write-Progress -Activity 'Pulling' -Status $src -PercentComplete (($global:SyncState.Counter / $global:SyncState.l) * 100.0)
+		}
+	}
+	end {
+		$global:SyncState = $global:SyncStateEmpty.psobject.copy()
+
+	}
+}
 function Adb-GetItems {
 	[CmdletBinding()]
-	[outputtype([string[]])]
+	[outputtype([AdbItem[]])]
 	param (
-		[Parameter()]
-		$x,
-		[Parameter(Mandatory = $false)]
-		$t = 'f',
-		[parameter(Mandatory = $false)]
-		$Pattern
+		[Parameter(Mandatory, Position = 0)]
+		$Path
 	)
 	
-	$r = Adb-Find -x $x -type $t
+	<# $r = Adb-Find -x $x -type $t
 	$r = [string[]] ($r | Sort-Object)
 
 	if ($pattern) {
@@ -242,13 +312,32 @@ function Adb-GetItems {
 		}
 	}
 	
-	return $r
-}
+	return $r #>
 
+	return Invoke-AdbCommand "ls -lapR $Path" | Select-Object -Skip 2 | ForEach-Object {
+		$val = $_ -split '\s+'
+		$buf = [AdbItem] @{
+			IsDirectory = $val[0] -match 'd'
+			IsFile = $val[0] -match '^-'
+			Permissions = $val[0]
+			Links       = $val[1]
+			Owner       = $val[2]
+			Group       = $val[3]
+			Size        = $val[4]
+			Date        = $val[5]
+			Time        = $val[6]
+			Name        = $val[7]
+			FullName = "$Path/$($val[7])"
+			NameError = $false
+		}
+		$buf.NameError = $buf.FullName.Length -ge 260
+
+		return $buf
+	}
+}
 
 #endregion
 
-Set-Alias Adb-Shell Invoke-AdbCommand
 Set-Alias Adb-GetItem Adb-Stat
 
 function Invoke-AdbCommand {
@@ -301,7 +390,7 @@ function Adb-List {
 	
 	$input2 = Adb-Escape $Path
 	$a = @('ls', $input2) -join ' '
-	Adb-Shell $a
+	Invoke-AdbCommand $a
 }
 
 function Adb-Find {
@@ -434,8 +523,11 @@ function Adb-GetItem {
 } #>
 
 function Adb-GetPackages {
-	$aa = @( 'pm list packages -f --user 0')
-	return (Invoke-AdbCommand @aa)
+	[outputtype([string[]])]
+	param()
+
+	$aa = ((adb shell pm list packages --user 0) -split 'package:') | Where-Object { $_ -ne '' }
+	return [string[]] $aa
 }
 
 
