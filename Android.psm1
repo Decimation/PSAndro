@@ -295,6 +295,7 @@ function Adb-QPull {
 
 	}
 }
+
 function Adb-GetItems {
 	[CmdletBinding()]
 	[outputtype([AdbItem[]])]
