@@ -122,7 +122,7 @@ function Adb-RemoveItem {
 		[string]$src
 	)
 	$a = @(Remove-Item "$src")
-	Invoke-AdbCommand @a
+	Invoke-AdbShell @a
 }
 
 function Adb-Copy {
@@ -236,7 +236,7 @@ function Adb-GetItemsDifference {
 	$remoteItems = Adb-GetItems $RemotePath
 	$localItems = Get-ChildItem $LocalPath
 	$localNames = $localItems | Select-Object -ExpandProperty Name
-	$diff = $remoteItems | where { $localNames -notcontains $_.Name }
+	$diff = $remoteItems | Where-Object { $localNames -notcontains $_.Name }
 	return $diff
 }
 
@@ -260,7 +260,7 @@ function Adb-QPull {
 		$Items,
 		$Destination = $(Get-Location)
 	)
-	begin{
+	begin {
 
 	}
 	process {
@@ -301,7 +301,9 @@ function Adb-GetItems {
 	[outputtype([AdbItem[]])]
 	param (
 		[Parameter(Mandatory, Position = 0)]
-		$Path
+		$Path,
+		[Parameter()]
+		[switch]$Recurse
 	)
 	
 	<# $r = Adb-Find -x $x -type $t
@@ -315,11 +317,17 @@ function Adb-GetItems {
 	
 	return $r #>
 
-	return Invoke-AdbCommand "ls -lapR $Path" | Select-Object -Skip 2 | ForEach-Object {
+	$lsArgs = '-lap'
+	if ($Recurse) {
+		$lsArgs += 'R'
+	}
+
+	return Invoke-AdbShell "ls $lsArgs $Path" | Select-Object -Skip 2 | ForEach-Object {
 		$val = $_ -split '\s+'
+		$fn = $(Join-Path $Path $val[7]) -replace '\\', '/'
 		$buf = [AdbItem] @{
 			IsDirectory = $val[0] -match 'd'
-			IsFile = $val[0] -match '^-'
+			IsFile      = $val[0] -match '^-'
 			Permissions = $val[0]
 			Links       = $val[1]
 			Owner       = $val[2]
@@ -328,8 +336,8 @@ function Adb-GetItems {
 			Date        = $val[5]
 			Time        = $val[6]
 			Name        = $val[7]
-			FullName = "$Path/$($val[7])"
-			NameError = $false
+			FullName    = $fn
+			NameError   = $false
 		}
 		$buf.NameError = $buf.FullName.Length -ge 260
 
@@ -341,7 +349,7 @@ function Adb-GetItems {
 
 Set-Alias Adb-GetItem Adb-Stat
 
-function Invoke-AdbCommand {
+function Invoke-AdbShell {
 	$rg = @('shell', $args)
 	adb @rg
 }
@@ -349,7 +357,7 @@ function Invoke-AdbCommand {
 function Adb-SendInput {
 	param([parameter(ValueFromRemainingArguments)] $a)
 	$x = @('input', $a)
-	Invoke-AdbCommand @x
+	Invoke-AdbShell @x
 }
 
 function Adb-SendFastSwipe {
@@ -391,7 +399,7 @@ function Adb-List {
 	
 	$input2 = Adb-Escape $Path
 	$a = @('ls', $input2) -join ' '
-	Invoke-AdbCommand $a
+	Invoke-AdbShell $a
 }
 
 function Adb-Find {
@@ -430,7 +438,7 @@ function Adb-Find {
 	}
 	$a += '-printf', $fa
 	
-	$r = Invoke-AdbCommand @a
+	$r = Invoke-AdbShell @a
 	
 	#TODO
 
@@ -449,7 +457,7 @@ function Adb-Stat {
 	$d = "   "
 	$a = "%n", "%N", "%F", "%w", "%x", "%y", "%z", "%s" -join $d
 	$cmd = @("stat -c '$a' $x")
-	$out = [string] (Invoke-AdbCommand @cmd)
+	$out = [string] (Invoke-AdbShell @cmd)
 	$rg = $out -split $d
 	$i = 0
 
@@ -591,6 +599,13 @@ function Adb-Paste {
 	
 }
 
+function Adb-Screenshot {
+	param (
+		$FileName
+	)
+	adb exec-out screencap -p > $FileName
+}
+
 <# function Adb-GetAccessibility {
 	[outputtype([string[]])]
 	$s = Adb-HandleSettings 'get' 'secure' 'enabled_accessibility_services'
@@ -630,3 +645,34 @@ function Blt-Send {
 }
 
 # endregion
+
+function Adb-Pull {
+	[CmdletBinding(DefaultParameterSetName = 'Default')]
+	param (
+		[parameter(Mandatory, ParameterSetName = 'Default')]
+		$Remote,
+		[parameter(ParameterSetName = 'Default')]
+		$Local,
+
+		[parameter(ParameterSetName = 'Array', ValueFromPipeline)]
+		$Items
+	)
+	process {
+
+		if ($PSCmdlet.ParameterSetName -eq 'Array') {
+			$n = 0
+			foreach ($i in $Items) {
+				$cmd = @('pull', '-a', $i, $Local)
+				$s = adb @cmd
+				$n++
+				Write-Progress -Activity 'Pulling' -Status $i -PercentComplete (($n / $Items.Length) * 100.0)
+			}
+		}
+		else {
+			$cmd = @('pull', '-a', $Remote, $Local)
+			$s = adb @cmd
+			return $s
+		}
+	}
+
+}
