@@ -273,7 +273,7 @@ function Adb-QPull {
 		$z = Invoke-Parallel -InputObject $Items -Parameter $Destination -ImportVariables -Quiet -ScriptBlock {
 			$src = $_.FullName
 			$dst = "$parameter\$($_.Name)"
-			adb pull $_.FullName $dst
+			adb pull -a $_.FullName $dst
 			<# $dst = "$parameter\$($_.Name)"
 			$dst = Resolve-Path $dst
 			$dst = $dst.Path
@@ -324,7 +324,8 @@ function Adb-GetItems {
 
 	return Invoke-AdbShell "ls $lsArgs $Path" | Select-Object -Skip 2 | ForEach-Object {
 		$val = $_ -split '\s+'
-		$fn = $(Join-Path $Path $val[7]) -replace '\\', '/'
+		$rn = $val[7..$val.Length] -join ' '
+		$fn = $(Join-Path $Path $rn) -replace '\\', '/'
 		$buf = [AdbItem] @{
 			IsDirectory = $val[0] -match 'd'
 			IsFile      = $val[0] -match '^-'
@@ -335,7 +336,7 @@ function Adb-GetItems {
 			Size        = $val[4]
 			Date        = $val[5]
 			Time        = $val[6]
-			Name        = $val[7]
+			Name        = $rn.TrimEnd('/')
 			FullName    = $fn
 			NameError   = $false
 		}
